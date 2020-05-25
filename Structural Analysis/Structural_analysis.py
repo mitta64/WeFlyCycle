@@ -30,7 +30,7 @@ Column 3: Average distributed lift force per section, positive since upward
 Column 4: Moment arm, middle of each section
 Column 5: Total moment per section
 Column 6: Force of the engine, negative since downward
-Column 7: 
+Column 7: Force of the wing mass from class II weight estimation
 Column 8: Force of the fuel per section, assumed to be located in the middle of a section
 Column 9: Volume per section
 Column 10: Chord length per section
@@ -41,27 +41,30 @@ Column 1: Start of a section in terms of the fuselage length
 Column 2: End of a section in terms of the fuselage length
 Column 3: Force of pax + luggage per section
 Column 4: Force due to mass tank and hydrogen per section
-Column 5: Force due to the engines per section
+Column 5: Force due to the engines and nose landing gear per section
 Column 6: Force due to the forward and aft cargo compartment per section
 Column 7: Force due to the fuselage
 Column 8: Force due to the wing
 Column 9: Total force per section
 Column 10: Moment arm from section to centre of gravity
 Column 11: Moment per section about critical point
+Column 12: Moment analysis per section, verification
 """
 class structural:
     
     def __init__(self, lift, wingspan, root_chord, tip_chord, sections, height_airfoil, material_yield,
                  safety_factor, mass_engine_1, loc_engine_1, mass_engine_2, loc_engine_2,
                  mass_fuel, front_spar, rear_spar, t_spar,
-                 density, material_name, metal_wing, composite_wing, fus_sections,
+                 density, material_name, metal_wing, composite_wing, wing_class2, 
+                 mass_landing_gear, loc_landing_gear, fus_sections,
                  fus_len, start_wing, mass_Htank, mass_H, start_Htank,
                  end_Htank, seat_pitch, seat_rows, seat_abreast, mass_pax, total_len_rows,
                  mass_fwd_cargo, loc_fwd_cargo, mass_aft_cargo, loc_aft_cargo, mass_engine, loc_engine,
                  mass_fus, mass_wing, pressure_difference, diameter_normal, diameter_double_bottom,
                  diameter_double_top, width_floor, width_beam, metal, metal_name, metal_yield, composite,
                  composite_name, composite_ultimate, composite_safety, t_beam, t_floor, loc_floor, loc_beam,
-                 composite_symmetry_plies, height_double_bubble, metal_density, composite_density):
+                 composite_symmetry_plies, height_double_bubble, metal_density, composite_density,
+                 mass_nose_gear, loc_nose_gear):
         # Wing
         self.lift = lift
         self.wingspan = wingspan
@@ -83,6 +86,9 @@ class structural:
         self.material_name = material_name
         self.metal_wing = metal_wing
         self.composite_wing = composite_wing
+        self.wing_class2 = wing_class2
+        self.mass_landing_gear = mass_landing_gear
+        self.loc_landing_gear = loc_landing_gear
         
         # Fuselage
         self.fus_sections = fus_sections
@@ -126,6 +132,8 @@ class structural:
         self.height_double_bubble = height_double_bubble
         self.metal_density = metal_density
         self.composite_density = composite_density
+        self.mass_nose_gear = mass_nose_gear
+        self.loc_nose_gear = loc_nose_gear
         
         # Gravity
         self.g = 9.81
@@ -145,8 +153,14 @@ class structural:
         force_engine_1 = - self.mass_engine_1 * self.g
         force_engine_2 = - self.mass_engine_2 * self.g
         
+        # Force due to the landing gear
+        force_landing_gear = -self.mass_landing_gear * self.g
+        
         # Force due to fuel, per section!
         force_fuel = (-(0.5 *self.mass_fuel / self.sections) * self.g)
+        
+        # Force wing mass per section
+        force_wing = (- self.wing_class2 * self.g ) / (self.sections)
         
         # Define chord length for each section depending on spar locations
         self.root_chord = (1 - ((1 - self.rear_spar) + self.front_spar)) * self.root_chord
@@ -175,7 +189,7 @@ class structural:
             # Compute moment arm from root
             self.data[i, 3] = (self.data[i, 0] + self.data[i, 1]) / 2
             
-            # Add force due to the engine(s)
+            # Add force due to the engine(s) and landing gear
                 # Engine 1
             if self.loc_engine_1 >= self.data[i, 0] and self.loc_engine_1 < self.data[i, 1]:
                 self.data[i, 5] = force_engine_1
@@ -183,7 +197,13 @@ class structural:
                 # Engine 2
             if self.loc_engine_2 >= self.data[i, 0] and self.loc_engine_2 < self.data[i, 1]:
                 self.data[i, 5] = force_engine_2
+           
+                # Landing gear
+            if self.loc_landing_gear >= self.data[i, 0] and self.loc_landing_gear < self.data[i, 1]:
+                self.data[i, 5] = force_landing_gear
             
+            #Compute force due to the wing
+            self.data[i, 6] = force_wing
             # Compute force due to the fuel
             self.data[i, 7] =  force_fuel
          
@@ -194,7 +214,7 @@ class structural:
             
             
             # Compute moment per section due to lift force, engine weight, fuel weight, SAFETY FACTOR USED
-            self.data[i, 4] = sum((self.data[:, 2] * sec_length + self.data[:, 5] + self.data[:, 7]) 
+            self.data[i, 4] = sum((self.data[:, 2] * sec_length + self.data[:, 5] + self.data[:,6] + self.data[:, 7]) 
                                   * self.arm[:, i]) * self.safety_factor
                     
             # Change in chord along the span
@@ -210,7 +230,7 @@ class structural:
             self.plate_thickness = max(self.data[:,10])
         
         if self.composite_wing == 'yes':
-            self.plate_thickness = max(self.data[:,10]) * self.composite_symmetry_plies
+            self.plate_thickness = max(self.data[:,10]) * 2 * self.composite_symmetry_plies
         
         # Compute the volume of the material per section
         for i in range(int(self.sections)):
@@ -227,12 +247,19 @@ class structural:
         # print('The weight of the wing is:', self.wing_mass, '[kg]')
         # print('The thickness of the top and bottom panel is', 1000 * round(self.plate_thickness, 4), '[mm]')
         
-        # Plot moment distribution over the half wingspan
-        # plt.scatter(np.linspace(1, self.sections, self.sections), self.data[:, 4])
+        #==============================================================================
+        # Verification of wing internal moments
+        #Plot moment distribution over the half wingspan
+        # plt.plot(np.linspace(1, self.sections, self.sections), self.data[:, 4], marker ='o', linestyle = '-' )
+        # plt.plot([1,20], [0,0])
+        # plt.title('Moment distribution over the half wing with starting position the root')
+        # plt.xlabel('Section number [-]')
+        # plt.ylabel('Internal moment [Nm]')
         # plt.show()
+        #==============================================================================
     def fuselage_loading(self):
         # Define array size
-        self.fus_data = np.zeros((int(self.fus_sections), 11))
+        self.fus_data = np.zeros((int(self.fus_sections), 12))
     
         # Generate sections
         start_end = np.linspace(0, int(self.fus_len), int(self.fus_sections) + 1)
@@ -261,7 +288,8 @@ class structural:
         # Force due to mass of wing from class II weight estimation
         force_wing = self.mass_wing * self.g
         
-        # Force due to pressurisation
+        # Force due to nose landing gear
+        force_nose_gear = self.mass_nose_gear * self.g
          
             # Add pax + luggage force per section
         for i in range(int(seat_rows)):
@@ -280,6 +308,10 @@ class structural:
             if self.loc_engine >= self.fus_data[i, 0] and self.loc_engine < self.fus_data[i, 1]:
                 self.fus_data[i, 4] = force_engines
        
+            # Add force nose landing gear
+            if self.loc_nose_gear >= self.fus_data[i, 0] and self.loc_nose_gear < self.fus_data[i, 1]:
+                self.fus_data[i, 4] = force_nose_gear
+        
             # Add force cargo
             if self.loc_fwd_cargo >= self.fus_data[i, 0] and self.loc_fwd_cargo < self.fus_data[i, 1]:
                 self.fus_data[i, 5] = force_fwd_cargo
@@ -307,6 +339,45 @@ class structural:
         # Total moment about critical point        
         moment_crit_point = sum(self.fus_data[:, 10])
         
+        #==============================================================================
+        # # Verification of fuselage internal moments
+        
+        # # Amount of left and right sections of critical point
+        # self.left_sections_crit = np.where(self.fus_data[:,0] < self.crit_point)
+        # self.right_sections_crit = np.where(self.fus_data[:,0] > self.crit_point)
+        
+        # right_fus = int(self.right_sections_crit[0][-1] - self.right_sections_crit[0][0] ) + 1
+        # fus_arm_right = np.linspace(right_fus, 1, right_fus)
+        # self.fus_arm_right = np.zeros((right_fus, right_fus))
+        # arm_right_end = int(self.right_sections_crit[0][-1])
+        # for i in range(right_fus):
+        #     # Generated the correct moment arms per section
+        #     b = int(fus_arm_right[i])
+        #     self.fus_arm_right[i:arm_right_end, i] = self.fus_data[:, 0][0:b]
+        
+        # left_fus = int(self.left_sections_crit[0][-1] - self.left_sections_crit[0][0] ) 
+        # fus_arm_left = np.linspace(left_fus, 1, left_fus)
+        # self.fus_arm_left = np.zeros((left_fus, left_fus))
+        # arm_left_end = int(self.left_sections_crit[0][-1])
+        # for i in range(left_fus):
+        #     # Generated the correct moment arms per section
+        #     b = int(fus_arm_left[i])
+        #     self.fus_arm_left[i:arm_left_end, i] = self.fus_data[:, 0][0:b]
+        
+        # for i in range(int(self.fus_sections)):
+        #     if i < self.left_sections_crit[0][-1]:
+        #         self.fus_data[i, 11] = sum( self.fus_data[:, 8][0:arm_left_end] * np.flip(self.fus_arm_left[:, (-1-i)]))
+        #     if i > self.left_sections_crit[0][-1]:
+        #         self.fus_data[i, 11] = sum( self.fus_data[:, 8][self.right_sections_crit[0][0] : arm_right_end + 1] * self.fus_arm_right[:, i -( self.left_sections_crit[0][-1] + 1) ])
+        # self.fus_data[self.right_sections_crit[0][0] - 1, 11] = self.fus_data[self.right_sections_crit[0][0], 11]
+        # plt.plot(np.linspace(1, self.fus_sections, self.fus_sections), self.fus_data[:,11],  marker ='o', linestyle = '-')
+        # plt.plot([1,62], [0,0])
+        # plt.title('Moment distribution over the fuselage with starting position the nose')
+        # plt.xlabel('Section number [-]')
+        # plt.ylabel('Internal moment [Nm]')
+        # plt.show()
+        #==============================================================================
+            
         # Required moment of inertia, fuselage thicknesses and weight fuselage
         # Metal conventional fuselage
         if self.metal == 'yes' and self.width_beam == 0:
@@ -377,7 +448,9 @@ mass_engine_2 = pd.read_excel('parameters structures.xlsx', sheet_name = 'Wing')
 loc_engine_2 = pd.read_excel('parameters structures.xlsx', sheet_name = 'Wing')['value'][26]
 metal_wing = pd.read_excel('parameters structures.xlsx', sheet_name = 'Wing')['value'][27]
 composite_wing = pd.read_excel('parameters structures.xlsx', sheet_name = 'Wing')['value'][28]
-
+wing_class2 = pd.read_excel('parameters structures.xlsx', sheet_name = 'Wing')['value'][29]
+mass_landing_gear = pd.read_excel('parameters structures.xlsx', sheet_name = 'Wing')['value'][30]
+loc_landing_gear = pd.read_excel('parameters structures.xlsx', sheet_name = 'Wing')['value'][31]
 
     # Fuselage
 fus_sections =  pd.read_excel('parameters structures.xlsx', sheet_name = 'Fuselage')['value'][0]
@@ -421,6 +494,8 @@ composite_symmetry_plies = pd.read_excel('parameters structures.xlsx', sheet_nam
 height_double_bubble = pd.read_excel('parameters structures.xlsx', sheet_name = 'Fuselage')['value'][10]
 metal_density = pd.read_excel('parameters structures.xlsx', sheet_name = 'Fuselage')['value'][45]
 composite_density = pd.read_excel('parameters structures.xlsx', sheet_name = 'Fuselage')['value'][46]
+mass_nose_gear = pd.read_excel('parameters structures.xlsx', sheet_name = 'Fuselage')['value'][48]
+loc_nose_gear = pd.read_excel('parameters structures.xlsx', sheet_name = 'Fuselage')['value'][49]
 
 """Use code"""
 
@@ -428,13 +503,15 @@ composite_density = pd.read_excel('parameters structures.xlsx', sheet_name = 'Fu
 loading = structural(lift, wingspan, root_chord, tip_chord, sections, height_airfoil, material_yield,
                      safety_factor, mass_engine_1, loc_engine_1, mass_engine_2, loc_engine_2,
                      mass_fuel, front_spar, rear_spar, t_spar, density,
-                     material_name, metal_wing, composite_wing, fus_sections, fus_len, start_wing, mass_Htank, mass_H, start_Htank,
+                     material_name, metal_wing, composite_wing, wing_class2, mass_landing_gear, loc_landing_gear,
+                     fus_sections, fus_len, start_wing, mass_Htank, mass_H, start_Htank,
                      end_Htank, seat_pitch, seat_rows, seat_abreast, mass_pax, total_len_rows,
                      mass_fwd_cargo, loc_fwd_cargo, mass_aft_cargo, loc_aft_cargo, mass_engine, loc_engine,
                      mass_fus, mass_wing, pressure_difference, diameter_normal, diameter_double_bottom,
                      diameter_double_top, width_floor, width_beam, metal, metal_name, metal_yield, composite,
                      composite_name, composite_ultimate, composite_safety, t_beam, t_floor, loc_floor,
-                     loc_beam, composite_symmetry_plies, height_double_bubble, metal_density, composite_density)
+                     loc_beam, composite_symmetry_plies, height_double_bubble, metal_density, composite_density,
+                     mass_nose_gear, loc_nose_gear)
 loading.wing_loading()   
 loading.fuselage_loading()
 data = loading.data
