@@ -26,7 +26,6 @@ class wing_loading_diagram:
         self.a=-0.0065
         self.MTOW=inputs["Dimensions"][0]
         self.W_f=inputs["Dimensions"][1]
-        self.W_L=self.MTOW-self.W_f
         self.V_stall_landing=inputs["Dimensions"][2]
         self.M_cruise= inputs["Dimensions"][3]
         self.H_cruise=inputs["Dimensions"][4]
@@ -75,8 +74,7 @@ class wing_loading_diagram:
         a=-2.5229
         b=1
         f=10**(a+b*np.log10(S_wet*10.7639))/10.7639
-        print(S_wet,f)
-        
+
         CD_0_clean=f/S
         CD_0_to=0.015+CD_0_clean
         CD_0_togear=CD_0_to+0.02
@@ -164,9 +162,10 @@ class wing_loading_diagram:
         kts_to_mps=0.514444
         n=100
         TW_vertical =np.linspace(0.2,0.6, num=n)
-        
+        W_L=self.MTOW-self.W_f
+        print(W_L)
         #sizing to stall speed req
-        Wingloadings1= self.wingloading(self.V_stall_landing, self.rho_0, self.CL_max_landing)/(self.W_L/self.MTOW)
+        Wingloadings1= self.wingloading(self.V_stall_landing, self.rho_0, self.CL_max_landing)/(W_L/self.MTOW)
         
         #sizing to take-off
         TOP_imp=self.s_FL* m_to_ft/37.5
@@ -187,10 +186,10 @@ class wing_loading_diagram:
         CL_max_landing=np.array([2.2,2.4,2.6,2.8])
         Wingloadings_landing=np.array([])
         for i in CL_max_landing:
-            WS_L=self.wingloading(V_SL,self.rho_0,i)/(self.W_L/self.MTOW)
+            WS_L=self.wingloading(V_SL,self.rho_0,i)/(W_L/self.MTOW)
             Wingloadings_landing=np.append(Wingloadings_landing,WS_L)
             plt.plot(WS_L*np.ones(len(TW_vertical)),TW_vertical,label='C_L_max_L=%s '%i)
-        print(Wingloadings_landing)
+            
         #Sizing to EASA climb
         N=int(self.N)
         S=125 #assume in m^2
@@ -214,7 +213,6 @@ class wing_loading_diagram:
         e=0.8
         CD_0=0.018
         V_cruise=self.cruise_velocity(T,self.M_cruise,self.gamma,self.R)
-        print(V_cruise)
         A=np.linspace(9.5,11.5,num=5)
         for i in A:
             TW_TO = (CD_0*0.5*rho*V_cruise**2/Wingloadings_step+Wingloadings_step*2/np.pi/i/e/rho/V_cruise**2)/0.23  
@@ -241,7 +239,6 @@ class wing_loading_diagram:
         plt.tick_params(labelsize=15)
                 
         #for CL_max_L=2.8, CL_max_to=2.2
-        print(len(Wingloadings_step),len(Thrustloading_TO1))
         x, y = self.intersection(self, Wingloadings_step, Thrustloading_TO1[2*len(Wingloadings_step):3*len(Wingloadings_step)], Wingloadings_landing[-1]*np.ones(len(TW_vertical)), TW_vertical)
         plt.plot(x, y, '*g',markersize=30)
         plt.show()
@@ -249,7 +246,9 @@ class wing_loading_diagram:
         
         T_TO=y*self.MTOW*self.g/1000
         
-        return x,y, T_TO
+        Wingloading_L=(W_L/self.MTOW)*x
+        Wingloading_cr=self.begincruise_MTOW*x
+        return x,y, T_TO,Wingloading_L,Wingloading_cr
         
 if __name__ == "__main__":
     results=wing_loading_diagram(inputs)
@@ -258,11 +257,12 @@ if __name__ == "__main__":
     
     file = openpyxl.load_workbook('inputs_outputs.xlsx')
     sheet= file['Outputs'] 
-    for i in range(2,5):
+    for i in range(2,7):
         cell= sheet.cell(row=i, column=2)    
         cell.value=results.wingloadings[i-2].item()
     file.save('inputs_outputs.xlsx')
     
     
-        
-        
+    
+    
+    
