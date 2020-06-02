@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-inputs=pd.read_excel(r'inputs.xlsx', sheet_name="Sheet1") #Read input excel
+inputs=pd.read_excel(r'inputs_outputs.xlsx', sheet_name="Inputs") #Read input excel
 print(inputs)
 
 class wing_loading_diagram:
@@ -254,7 +254,15 @@ class wing_loading_diagram:
 if __name__ == "__main__":
     results=wing_loading_diagram(inputs)
     print(results.wingloadings)
+    import openpyxl
     
-        
+    file = openpyxl.load_workbook('inputs_outputs.xlsx')
+    sheet= file['Outputs'] 
+    for i in range(2,5):
+        cell= sheet.cell(row=i, column=2)    
+        cell.value=results.wingloadings[i-2].item()
+    file.save('inputs_outputs.xlsx')
+    
+    
         
         
