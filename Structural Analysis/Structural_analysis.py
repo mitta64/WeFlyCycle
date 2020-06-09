@@ -35,6 +35,9 @@ Column 8: Force of the fuel per section, assumed to be located in the middle of 
 Column 9: Volume per section
 Column 10: Chord length per section
 Column 11: Minimal skin thickness, root is most critical
+Column 12: Ixx, x axis from the centre of the cross section to the right
+Column 13: Iyy, y axis from the centre of the cross section to the bottom
+Column 14: Izz, z axis from the centre of the fuselage to the tip of the half wing
 
 self.fus_data
 Column 1: Start of a section in terms of the fuselage length
@@ -140,7 +143,7 @@ class structural:
         
     def wing_loading(self):
         # Define array size
-        self.data = np.zeros((int(self.sections), 11))
+        self.data = np.zeros((int(self.sections), 14))
                 
         # Generate sections
         start_end = np.linspace(0, 0.5 * int(self.wingspan), int(self.sections) + 1)
@@ -206,7 +209,7 @@ class structural:
             self.data[i, 6] = force_wing
             # Compute force due to the fuel
             self.data[i, 7] =  force_fuel
-         
+          
         for i in range(int(self.sections)):
             # Generated the correct moment arms per section
             b = int(arm_start[i])
@@ -220,11 +223,19 @@ class structural:
             # Change in chord along the span
             self.data[i, 9] = chord[i]
                         
-            # Compute minimal thickness of the skin
+            # Compute minimal thickness of the skin and Ixx, Iyy
             # data[0,10] is the most critical value, does not matter if the rest is negative
             self.data[i, 10] = ((((abs(self.data[i, 4]) * y_max) / 
                                    self.material_yield) - ((1/6) * self.t_spar * self.height**3)) 
                                 / ((1/2) * self.height**2 * (self.data[i, 9] - 2 * self.t_spar))) 
+            # Compute moment of inertia per section: Ixx, Iyy, Izz
+            self.data[i, 11] =  ((1/6) * self.t_spar * self.height**3 + (1/2) * self.height**2 * self.data[0, 10]
+                                * (self.data[i, 9] - 2 * self.t_spar))
+            self.data[i, 12] = ((1/6) * self.t_spar**3 * self.height + (1/6) * (self.data[i, 9] - self.t_spar)**3 
+                                * self.data[0, 10] + (1/2) * self.height**2 * self.data[0, 10] * 
+                                (self.data[i, 9] - 2 * self.t_spar))
+            #self.data[i, 13] = 
+            
         # Final minimum thickness required for the skin    
         if self.metal_wing == 'yes':
             self.plate_thickness = max(self.data[:,10])
@@ -243,10 +254,16 @@ class structural:
         # Multiplication by 2: wing = 2 * halfwing
         self.wing_mass = 2 * self.volume_material * self.density
         
-        # Print results
-        # print('The weight of the wing is:', self.wing_mass, '[kg]')
-        # print('The thickness of the top and bottom panel is', 1000 * round(self.plate_thickness, 4), '[mm]')
+        # Print results 
+        print('The weight of the wing is:', self.wing_mass, '[kg]')
+        print('The thickness of the top and bottom panel is', 1000 * round(self.plate_thickness, 4), '[mm]')
         
+        # # Check for fatigue analysis
+        # tensile_stress_root = (self.data[0, 4] / self.safety_factor * y_max) / self.data[0, 11]
+        # thickness = ((((abs(self.data[0, 4]) * y_max) / 
+        #                            290726196.3) - ((1/6) * self.t_spar * self.height**3)) 
+        #                         / ((1/2) * self.height**2 * (self.data[0, 9] - 2 * self.t_spar))) 
+        # print(1000 * thickness)
         #==============================================================================
         # Verification of wing internal moments
         #Plot moment distribution over the half wingspan
@@ -389,6 +406,11 @@ class structural:
             self.fuselage_volume = self.fuselage_area * self.fus_len
             self.fuselage_mass = self.fuselage_volume * metal_density
             
+            # Moment of inertia Izz, Iyy, Ixx 
+            Izz = self.Ixx
+            Iyy = self.Ixx - (self.t_floor * self.width_floor * (self.loc_floor - self.diameter_normal/2)**2)
+            self.I = [Izz, Iyy]
+            
         # Metal double bubble fuselage
         if self.metal == 'yes' and self.width_beam != 0:
             self.Ixx = (moment_crit_point * ((self.diameter_double_bottom + self.diameter_double_top) / 2)) / self.metal_yield
@@ -409,7 +431,13 @@ class structural:
                                     + self.t_floor * self.width_floor)
             self.fuselage_volume = self.fuselage_area * self.fus_len
             self.fuselage_mass = self.fuselage_volume * composite_density
-        
+            
+            
+            # Moment of inertia Izz, Iyy, Ixx 
+            Izz = self.Ixx
+            Iyy = self.Ixx - (self.t_floor * self.width_floor * (self.loc_floor - self.diameter_normal/2)**2)
+            self.I = [Izz, Iyy]
+            
         # Composite double bubble fuselage
         if self.composite == 'yes' and self.width_beam != 0:
             self.Ixx = ((moment_crit_point * ((self.diameter_double_bottom + self.diameter_double_top) / 2)) / 
@@ -423,8 +451,8 @@ class structural:
             self.fuselage_mass = self.fuselage_volume * composite_density
                    
         # Print results
-        print('The weight of the fuselage is:', self.fuselage_mass, '[kg]')
-        print('The thickness of skin panels is:', 1000 * round(self.t_fus, 4), '[mm]')
+        # print('The weight of the fuselage is:', self.fuselage_mass, '[kg]')
+        # print('The thickness of skin panels is:', 1000 * round(self.t_fus, 4), '[mm]')
             
 # Import excel data
     # Wing
